@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function StatusPage() {
+function StatusContent() {
   const params = useSearchParams();
   const error = params.get("error");
 
@@ -34,5 +35,13 @@ export default function StatusPage() {
         </Link>
       </div>
     </main>
+  );
+}
+
+export default function StatusPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-muted">Cargando...</div>}>
+      <StatusContent />
+    </Suspense>
   );
 }
