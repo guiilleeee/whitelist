@@ -26,6 +26,35 @@ async function ensureAppealsTable() {
   await query(`CREATE INDEX IF NOT EXISTS idx_appeals_discord ON appeals(discord_id)`);
 }
 
+async function ensureBlacklistTable() {
+  await query(
+    `CREATE TABLE IF NOT EXISTS blacklist (
+       id SERIAL PRIMARY KEY,
+       discord_id TEXT NOT NULL,
+       reason TEXT,
+       source TEXT,
+       created_at TIMESTAMP DEFAULT NOW()
+     )`
+  );
+  await query(`CREATE INDEX IF NOT EXISTS idx_blacklist_discord ON blacklist(discord_id)`);
+}
+
+async function ensureBlacklistTicketsTable() {
+  await query(
+    `CREATE TABLE IF NOT EXISTS blacklist_tickets (
+       id SERIAL PRIMARY KEY,
+       discord_id TEXT NOT NULL,
+       main_channel_id TEXT,
+       staff_channel_id TEXT,
+       main_message_id TEXT,
+       status TEXT DEFAULT 'open',
+       created_at TIMESTAMP DEFAULT NOW(),
+       updated_at TIMESTAMP DEFAULT NOW()
+     )`
+  );
+  await query(`CREATE INDEX IF NOT EXISTS idx_blacklist_tickets_discord ON blacklist_tickets(discord_id)`);
+}
+
 const router = express.Router();
 
 const DISCORD_API = "https://discord.com/api";
@@ -71,6 +100,115 @@ router.get("/auth/discord/callback", async (req, res) => {
 
     const createdAt = snowflakeToDate(user.id);
     const eligible = isOlderThanMonths(createdAt, 6);
+
+    await ensureBlacklistTable();
+    await ensureBlacklistTicketsTable();
+    const blackRes = await query(
+      `SELECT reason FROM blacklist WHERE discord_id = $1 LIMIT 1`,
+      [user.id]
+    );
+    if (blackRes.rows.length) {
+      const reason = blackRes.rows[0].reason || "Blacklisted";
+      try {
+        if (botEnabled()) {
+          const mainGuildId = process.env.DISCORD_MAIN_GUILD_ID || process.env.DISCORD_GUILD_ID || null;
+          const mainCategoryId = process.env.DISCORD_MAIN_CATEGORY_ID || process.env.DISCORD_CATEGORY_ID || null;
+          const mainStaffRoleIds = parseCsv(process.env.DISCORD_MAIN_STAFF_ROLE_IDS || process.env.DISCORD_STAFF_ROLE_IDS);
+
+          const staffGuildId = process.env.DISCORD_STAFF_GUILD_ID || process.env.DISCORD_GUILD_ID || mainGuildId;
+          const staffCategoryId = process.env.DISCORD_STAFF_CATEGORY_ID || process.env.DISCORD_CATEGORY_ID || null;
+          const staffRoleIds = parseCsv(process.env.DISCORD_STAFF_ROLE_IDS_STAFF || process.env.DISCORD_STAFF_ROLE_IDS);
+
+          let mainChannel = null;
+          let staffChannel = null;
+          let mainLink = null;
+          let staffLink = null;
+
+          if (mainGuildId) {
+            mainChannel = await createTicketChannel({
+              guildId: mainGuildId,
+              categoryId: mainCategoryId,
+              staffRoleIds: mainStaffRoleIds,
+              applicantDiscordId: user.id,
+              displayName: user.username,
+              allowApplicant: true
+            });
+          }
+
+          if (staffGuildId) {
+            staffChannel = await createTicketChannel({
+              guildId: staffGuildId,
+              categoryId: staffCategoryId,
+              staffRoleIds,
+              applicantDiscordId: user.id,
+              displayName: user.username,
+              allowApplicant: false
+            });
+          }
+
+          mainLink = mainChannel?.id ? channelJumpLink({ guildId: mainGuildId, channelId: mainChannel.id }) : null;
+          staffLink = staffChannel?.id ? channelJumpLink({ guildId: staffGuildId, channelId: staffChannel.id }) : null;
+
+          if (mainChannel?.id) {
+            const msg = await postToChannel(mainChannel.id, {
+              content: `<@${user.id}>`,
+              embeds: [
+                {
+                  title: "Acceso bloqueado (blacklist)",
+                  color: 0xe74c3c,
+                  description:
+                    "Tu cuenta aparece en blacklist por estar en servidores no permitidos. Usa los botones de abajo para indicar tu situacion.",
+                  fields: [
+                    { name: "Estado", value: "Bloqueado por blacklist", inline: true },
+                    { name: "Ticket staff", value: staffLink || "N/A", inline: true },
+                    { name: "Accion", value: "✅ Ya sali / ❌ No quiero salir / NP (excepcion)", inline: false }
+                  ]
+                }
+              ],
+              components: [
+                {
+                  type: 1,
+                  components: [
+                    { type: 2, style: 3, custom_id: `bl_left:${user.id}`, label: "Ya sali" },
+                    { type: 2, style: 4, custom_id: `bl_refuse:${user.id}`, label: "No quiero salir" },
+                    { type: 2, style: 2, custom_id: `bl_exception:${user.id}`, label: "NP / Excepcion" }
+                  ]
+                }
+              ]
+            });
+
+            await query(
+              `INSERT INTO blacklist_tickets (discord_id, main_channel_id, staff_channel_id, main_message_id)
+               VALUES ($1, $2, $3, $4)`,
+              [user.id, mainChannel?.id || null, staffChannel?.id || null, msg?.id || null]
+            );
+          }
+
+          if (staffChannel?.id) {
+            const staffRoleId = staffRoleIds[0] || null;
+            const staffMention = staffRoleId ? `<@&${staffRoleId}>` : "@staff";
+            await postToChannel(staffChannel.id, {
+              content: `${staffMention} Usuario en blacklist. Ticket principal: ${mainLink || "N/A"}`,
+              embeds: [
+                {
+                  title: "Blacklist",
+                  color: 0xe74c3c,
+                  fields: [
+                    { name: "Discord", value: `${user.username}#${user.discriminator ?? ""}`.replace(/#0$/, ""), inline: true },
+                    { name: "Discord ID", value: user.id, inline: true },
+                    { name: "Motivo", value: String(reason).slice(0, 900), inline: false }
+                  ]
+                }
+              ]
+            });
+          }
+        }
+      } catch (e) {
+        console.error("blacklist ticket error:", e);
+      }
+
+      return res.redirect(`${process.env.WEB_URL}/status?error=blacklisted`);
+    }
 
     await query(
       `INSERT INTO users (discord_id, discord_username, avatar, created_at, is_eligible)
@@ -224,3 +362,4 @@ router.post("/logout", (req, res) => {
 });
 
 export default router;
+

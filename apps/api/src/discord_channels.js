@@ -182,3 +182,18 @@ export async function editMessage(channelId, messageId, payload) {
   if (!res.ok) throw new Error(`discord_edit_message_failed: ${res.status} ${JSON.stringify(json)}`);
   return json;
 }
+
+export async function deleteChannel(channelId) {
+  if (!botEnabled()) return;
+  const res = await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`
+    }
+  });
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(`discord_delete_channel_failed: ${res.status} ${JSON.stringify(json)}`);
+  }
+  return true;
+}

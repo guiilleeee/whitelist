@@ -566,6 +566,14 @@ router.post("/exam/submit", requireUser, async (req, res) => {
                   { name: "Steam", value: clamp(profile?.steamLink || "N/A", 200), inline: false }
                 ]
               }
+            ],
+            components: [
+              {
+                type: 1,
+                components: [
+                  { type: 2, style: 2, custom_id: `wl_close_main:${examId}`, label: "Cerrar ticket" }
+                ]
+              }
             ]
           });
         }
@@ -575,6 +583,10 @@ router.post("/exam/submit", requireUser, async (req, res) => {
           const minorRoleId = process.env.DISCORD_MAIN_ROLE_MINOR_ID || null;
           if (mainGuildId && minorRoleId && profile?.isAdult === false) {
             await addMemberRole({ guildId: mainGuildId, userId: req.session.user.discordId, roleId: minorRoleId });
+          }
+          const vacRoleId = process.env.DISCORD_MAIN_ROLE_VAC_ID || null;
+          if (mainGuildId && vacRoleId && vacCheck?.flagged) {
+            await addMemberRole({ guildId: mainGuildId, userId: req.session.user.discordId, roleId: vacRoleId });
           }
         } catch (e) {
           console.error("auto minor role error:", e);
@@ -688,7 +700,8 @@ router.post("/exam/submit", requireUser, async (req, res) => {
               components: [
                 { type: 2, style: 3, custom_id: `wl_decide:${examId}:approved`, label: "Aceptada" },
                 { type: 2, style: 4, custom_id: `wl_reject:${examId}`, label: "Rechazada" },
-                { type: 2, style: 2, custom_id: `wl_changes:${examId}`, label: "Pendiente de cambios" }
+                { type: 2, style: 2, custom_id: `wl_changes:${examId}`, label: "Pendiente de cambios" },
+                { type: 2, style: 1, custom_id: `wl_close_ticket:${examId}`, label: "Cerrar ticket" }
               ]
             }
           ]

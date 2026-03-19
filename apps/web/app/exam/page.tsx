@@ -145,6 +145,9 @@ export default function ExamPage() {
   const [fastAnswers, setFastAnswers] = useState<number[]>([]);
   const [copyPasteBlocks, setCopyPasteBlocks] = useState(0);
   const [rightClickBlocks, setRightClickBlocks] = useState(0);
+  const [tabSwitchDetails, setTabSwitchDetails] = useState<{ at: number; type: string }[]>([]);
+  const [copyPasteDetails, setCopyPasteDetails] = useState<{ at: number; type: string }[]>([]);
+  const [rightClickDetails, setRightClickDetails] = useState<{ at: number }[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const currentQuestion = questions[currentIndex];
@@ -175,10 +178,12 @@ export default function ExamPage() {
     function onVisibility() {
       if (document.visibilityState === "hidden" && phase === "exam") {
         setTabSwitches((prev) => prev + 1);
+        setTabSwitchDetails((prev) => [...prev, { at: Date.now(), type: "hidden" }]);
         setBlockedOverlay(true);
         setNeedsReset(true);
       }
       if (document.visibilityState === "visible" && phase === "exam" && needsReset) {
+        setTabSwitchDetails((prev) => [...prev, { at: Date.now(), type: "visible" }]);
         // When the user comes back, restart the random questions (keep profile).
         resetQuestions();
       }
@@ -196,12 +201,14 @@ export default function ExamPage() {
 
       e.preventDefault();
       setCopyPasteBlocks((prev) => prev + 1);
+      setCopyPasteDetails((prev) => [...prev, { at: Date.now(), type: e.type }]);
     }
 
     function onRightClick(e: MouseEvent) {
       if (phase !== "exam") return;
       e.preventDefault();
       setRightClickBlocks((prev) => prev + 1);
+      setRightClickDetails((prev) => [...prev, { at: Date.now() }]);
     }
 
     function onKeyDown(e: KeyboardEvent) {
@@ -275,6 +282,9 @@ export default function ExamPage() {
     setFastAnswers([]);
     setCopyPasteBlocks(0);
     setRightClickBlocks(0);
+    setTabSwitchDetails([]);
+    setCopyPasteDetails([]);
+    setRightClickDetails([]);
   }
 
   function abandon() {
@@ -432,6 +442,9 @@ export default function ExamPage() {
       setFastAnswers([]);
       setCopyPasteBlocks(0);
       setRightClickBlocks(0);
+      setTabSwitchDetails([]);
+      setCopyPasteDetails([]);
+      setRightClickDetails([]);
       setNeedsReset(false);
       setIsResetting(false);
     } catch {
@@ -488,6 +501,9 @@ export default function ExamPage() {
             fastAnswers,
             copyPasteBlocks,
             rightClickBlocks,
+            tabSwitchDetails,
+            copyPasteDetails,
+            rightClickDetails,
             startedAt,
             finishedAt: Date.now()
           }
@@ -518,7 +534,7 @@ export default function ExamPage() {
   if (!user) {
     return (
       <main className="min-h-screen flex items-center justify-center px-6">
-        <div className="max-w-md w-full panel p-8 text-center">
+        <div className="max-w-md w-full glass glow-border p-8 text-center">
           <h1 className="text-2xl font-display mb-4">Debes iniciar sesion</h1>
           <a
             href={`${apiUrl}/auth/discord`}
@@ -535,8 +551,8 @@ export default function ExamPage() {
   if (phase === "done") {
     return (
       <main className="min-h-screen flex items-center justify-center px-6">
-        <div className="max-w-md w-full panel p-8 text-center">
-          <h1 className="text-2xl font-display mb-3">Whitelist enviada</h1>
+        <div className="max-w-md w-full glass glow-border p-8 text-center">
+          <h1 className="text-2xl font-display mb-3 gradient-text">Whitelist enviada</h1>
           <p className="text-muted">Tu whitelist esta siendo revisada por el staff.</p>
           <a href="/" className="text-xs text-muted mt-4 inline-flex">
             Volver al inicio
@@ -555,14 +571,14 @@ export default function ExamPage() {
 
     return (
       <main className="min-h-screen flex items-center justify-center px-6 py-10">
-        <div className="max-w-2xl w-full panel p-8">
+        <div className="max-w-2xl w-full glass glow-border p-8">
           <div className="flex items-center gap-4 mb-6">
             <div className="h-12 w-12 rounded-2xl bg-soft border border-line flex items-center justify-center">
               <img src="/genesis-logo.png" alt="Genesis Community" className="h-9 w-9 object-contain" />
             </div>
             <div className="min-w-0">
               <div className="text-xs text-muted uppercase tracking-[0.3em]">Genesis Community</div>
-              <h1 className="text-2xl font-display">Registro y examen</h1>
+              <h1 className="text-2xl font-display gradient-text">Registro y examen</h1>
             </div>
           </div>
 
@@ -582,20 +598,20 @@ export default function ExamPage() {
           {phase === "step1" ? (
             <div className="mt-6 grid md:grid-cols-2 gap-4">
               <input
-                className="w-full rounded-lg bg-ink/30 border border-line px-4 py-3 text-sm text-text"
+                className="w-full rounded-lg bg-surface/60 border border-line px-4 py-3 text-sm text-text"
                 placeholder="Nombre de Discord (se rellena automaticamente)"
                 value={profile.discordName}
                 readOnly
               />
               <input
-                className="w-full rounded-lg bg-ink/30 border border-line px-4 py-3 text-sm text-text"
+                className="w-full rounded-lg bg-surface/60 border border-line px-4 py-3 text-sm text-text"
                 placeholder="Link de Steam (perfil publico)"
                 value={profile.steamLink}
                 onChange={(e) => setProfile({ ...profile, steamLink: e.target.value })}
                 data-allow-paste="true"
               />
               <select
-                className="w-full md:col-span-2 rounded-lg bg-ink/30 border border-line px-4 py-3 text-sm text-text"
+                className="w-full md:col-span-2 rounded-lg bg-surface/60 border border-line px-4 py-3 text-sm text-text"
                 value={profile.applicationReason}
                 onChange={(e) => setProfile({ ...profile, applicationReason: e.target.value as any })}
               >
@@ -605,7 +621,7 @@ export default function ExamPage() {
                 <option value="wipe">WIPE</option>
                 <option value="ck">CK</option>
               </select>
-              <div className="md:col-span-2 flex items-center justify-between gap-3 rounded-lg bg-ink/30 border border-line px-4 py-3">
+              <div className="md:col-span-2 flex items-center justify-between gap-3 rounded-lg bg-surface/60 border border-line px-4 py-3">
                 <div className="text-sm text-text">Eres mayor de edad?</div>
                 <div className="flex items-center gap-2">
                   <button
@@ -625,7 +641,7 @@ export default function ExamPage() {
                 </div>
               </div>
               <textarea
-                className="w-full md:col-span-2 min-h-[120px] rounded-lg bg-ink/30 border border-line px-4 py-3 text-sm text-text"
+                className="w-full md:col-span-2 min-h-[120px] rounded-lg bg-surface/60 border border-line px-4 py-3 text-sm text-text"
                 placeholder="Experiencia previa en servidores de Discord (roleplay)"
                 value={profile.discordExperience}
                 onChange={(e) => setProfile({ ...profile, discordExperience: e.target.value })}
@@ -634,19 +650,19 @@ export default function ExamPage() {
           ) : (
             <div className="mt-6 grid md:grid-cols-2 gap-4">
               <input
-                className="w-full rounded-lg bg-ink/30 border border-line px-4 py-3 text-sm text-text"
+                className="w-full rounded-lg bg-surface/60 border border-line px-4 py-3 text-sm text-text"
                 placeholder="Nombre del PJ"
                 value={profile.characterName}
                 onChange={(e) => setProfile({ ...profile, characterName: e.target.value })}
               />
               <input
-                className="w-full rounded-lg bg-ink/30 border border-line px-4 py-3 text-sm text-text"
+                className="w-full rounded-lg bg-surface/60 border border-line px-4 py-3 text-sm text-text"
                 placeholder="Edad de nacimiento (ej: 1998)"
                 value={profile.birthYear}
                 onChange={(e) => setProfile({ ...profile, birthYear: e.target.value })}
               />
               <select
-                className="w-full rounded-lg bg-ink/40 border border-line px-4 py-3 text-sm text-text"
+                className="w-full rounded-lg bg-surface/60 border border-line px-4 py-3 text-sm text-text"
                 value={profile.faction}
                 onChange={(e) => setProfile({ ...profile, faction: e.target.value as Faction })}
               >
@@ -658,7 +674,7 @@ export default function ExamPage() {
                 ))}
               </select>
               <select
-                className="w-full rounded-lg bg-ink/40 border border-line px-4 py-3 text-sm text-text"
+                className="w-full rounded-lg bg-surface/60 border border-line px-4 py-3 text-sm text-text"
                 value={profile.socialClass}
                 onChange={(e) => setProfile({ ...profile, socialClass: e.target.value as SocialClass })}
               >
@@ -670,7 +686,7 @@ export default function ExamPage() {
                 ))}
               </select>
               <textarea
-                className="w-full md:col-span-2 min-h-[170px] rounded-lg bg-ink/30 border border-line px-4 py-3 text-sm text-text"
+                className="w-full md:col-span-2 min-h-[170px] rounded-lg bg-surface/60 border border-line px-4 py-3 text-sm text-text"
                 placeholder="Historia del personaje (170-500 palabras)"
                 value={profile.characterStory}
                 onChange={(e) => setProfile({ ...profile, characterStory: e.target.value })}
@@ -679,7 +695,7 @@ export default function ExamPage() {
                 <span>Palabras: {storyWords} (170-500)</span>
               </div>
               <textarea
-                className="w-full md:col-span-2 min-h-[140px] rounded-lg bg-ink/30 border border-line px-4 py-3 text-sm text-text"
+                className="w-full md:col-span-2 min-h-[140px] rounded-lg bg-surface/60 border border-line px-4 py-3 text-sm text-text"
                 placeholder="Objetivo del personaje (140-500 palabras, especifico y justificado; NO banda)"
                 value={profile.characterGoal}
                 onChange={(e) => setProfile({ ...profile, characterGoal: e.target.value })}
@@ -715,7 +731,7 @@ export default function ExamPage() {
                   setStatus(null);
                   setPhase("step2");
                 }}
-                className="rounded-xl bg-accent text-white font-semibold px-5 py-2"
+                className="rounded-xl bg-accent text-white font-semibold px-5 py-2 btn-soft"
               >
                 Continuar
               </button>
@@ -731,7 +747,7 @@ export default function ExamPage() {
                 >
                   Atras
                 </button>
-                <button type="button" onClick={startExam} className="rounded-xl bg-accent text-white font-semibold px-5 py-2">
+                <button type="button" onClick={startExam} className="rounded-xl bg-accent text-white font-semibold px-5 py-2 btn-soft">
                   Empezar test
                 </button>
               </div>
@@ -745,7 +761,7 @@ export default function ExamPage() {
   if (!currentQuestion) {
     return (
       <main className="min-h-screen flex items-center justify-center px-6">
-        <div className="max-w-md w-full panel p-8 text-center">
+        <div className="max-w-md w-full glass glow-border p-8 text-center">
           <h1 className="text-2xl font-display mb-3">Cargando preguntas...</h1>
           <p className="text-muted">Si tarda demasiado, revisa la API.</p>
         </div>
@@ -754,7 +770,9 @@ export default function ExamPage() {
   }
 
   return (
-    <main className="min-h-screen px-6 py-10 pb-28">
+    <main className="min-h-screen px-6 py-10 pb-28 relative overflow-hidden">
+      <div className="absolute -top-32 right-0 h-64 w-64 rounded-full bg-accent/20 blur-3xl animate-float" />
+      <div className="absolute -bottom-40 left-0 h-72 w-72 rounded-full bg-glow/20 blur-3xl animate-float" />
       <div className="max-w-4xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div className="flex items-center gap-4">
@@ -762,7 +780,7 @@ export default function ExamPage() {
               <img src="/genesis-logo.png" alt="Genesis Community" className="h-9 w-9 object-contain" />
             </div>
             <div>
-              <h1 className="text-2xl font-display">Examen de whitelist</h1>
+              <h1 className="text-2xl font-display gradient-text">Examen de whitelist</h1>
               <p className="text-sm text-muted">
                 Pregunta {currentIndex + 1} de {questions.length}
               </p>
@@ -771,11 +789,11 @@ export default function ExamPage() {
           <div className="text-sm text-muted">{progress}%</div>
         </div>
 
-        <div className="h-2 bg-line rounded-full overflow-hidden mb-8">
-          <div className="h-full bg-accent" style={{ width: `${progress}%` }} />
+        <div className="h-2 bg-line/60 rounded-full overflow-hidden mb-8">
+          <div className="h-full bg-gradient-to-r from-accent via-accent2 to-neon" style={{ width: `${progress}%` }} />
         </div>
 
-        <div className="panel p-8 animate-fadeInUp">
+        <div className="glass glow-border p-8 animate-fadeInUp">
           <h2 className="text-xl font-display mb-4">{currentQuestion.question}</h2>
 
           {currentQuestion.type === "multiple" ? (
@@ -783,7 +801,7 @@ export default function ExamPage() {
               {currentQuestion.options?.map((opt) => (
                 <label
                   key={opt}
-                  className="flex items-center gap-3 rounded-lg border border-line bg-ink/30 px-4 py-3 cursor-pointer"
+                  className="flex items-center gap-3 rounded-lg border border-line bg-surface/60 px-4 py-3 cursor-pointer hover:border-accent/60 transition"
                 >
                   <input
                     type="radio"
@@ -814,13 +832,13 @@ export default function ExamPage() {
               Anterior
             </button>
             {currentIndex < questions.length - 1 ? (
-              <button onClick={handleNext} className="rounded-xl bg-accent text-white font-semibold px-4 py-2">
-                Siguiente
-              </button>
-            ) : (
-              <button
-                onClick={handleSubmit}
-                disabled={isSubmitting}
+            <button onClick={handleNext} className="rounded-xl bg-accent text-white font-semibold px-4 py-2 btn-soft">
+              Siguiente
+            </button>
+          ) : (
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
                 className="rounded-xl bg-accent text-white font-semibold px-4 py-2 disabled:opacity-60 btn-soft"
               >
                 {isSubmitting ? "Enviando formulario..." : "Enviar formulario"}
@@ -832,7 +850,7 @@ export default function ExamPage() {
 
       {blockedOverlay && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center px-6">
-          <div className="max-w-md w-full panel p-6">
+          <div className="max-w-md w-full glass glow-border p-6">
             <h2 className="text-lg font-display">Atencion</h2>
             <p className="text-sm text-muted mt-2">
               Hemos detectado un cambio de pestana. Por seguridad, el test se reiniciara con nuevas preguntas.
@@ -862,7 +880,7 @@ export default function ExamPage() {
 
       <div className="fixed left-0 right-0 bottom-4 px-6">
         <div className="max-w-4xl mx-auto">
-          <div className="panel px-4 py-3 flex items-center justify-between">
+          <div className="glass glow-border px-4 py-3 flex items-center justify-between">
             <div className="text-xs text-muted">
               No abandones la pestana. Cambios detectados: {tabSwitches}. Copiar/pegar bloqueado: {copyPasteBlocks}.
             </div>

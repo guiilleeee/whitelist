@@ -70,9 +70,30 @@ CREATE TABLE IF NOT EXISTS appeals (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS blacklist (
+  id SERIAL PRIMARY KEY,
+  discord_id TEXT NOT NULL,
+  reason TEXT,
+  source TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS blacklist_tickets (
+  id SERIAL PRIMARY KEY,
+  discord_id TEXT NOT NULL,
+  main_channel_id TEXT,
+  staff_channel_id TEXT,
+  main_message_id TEXT,
+  status TEXT DEFAULT 'open',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_exams_user ON exams(user_discord_id);
 CREATE INDEX IF NOT EXISTS idx_exam_questions_exam ON exam_questions(exam_id);
 CREATE INDEX IF NOT EXISTS idx_exam_questions_question ON exam_questions(question_id);
 CREATE INDEX IF NOT EXISTS idx_answers_exam ON answers(exam_id);
 CREATE INDEX IF NOT EXISTS idx_session_expire ON "session" (expire);
 CREATE INDEX IF NOT EXISTS idx_appeals_discord ON appeals(discord_id);
+CREATE INDEX IF NOT EXISTS idx_blacklist_discord ON blacklist(discord_id);
+CREATE INDEX IF NOT EXISTS idx_blacklist_tickets_discord ON blacklist_tickets(discord_id);

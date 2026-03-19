@@ -11,9 +11,53 @@
 body {
   @apply bg-ink text-text font-body;
   background-image:
-    radial-gradient(circle at 15% 10%, rgba(42, 144, 255, 0.10), transparent 42%),
-    radial-gradient(circle at 85% 15%, rgba(255, 77, 141, 0.10), transparent 46%),
-    linear-gradient(180deg, #0B0E13, #090B10);
+    radial-gradient(circle at 12% 15%, rgba(54, 225, 255, 0.12), transparent 45%),
+    radial-gradient(circle at 88% 18%, rgba(255, 77, 141, 0.12), transparent 45%),
+    radial-gradient(circle at 50% 85%, rgba(124, 92, 255, 0.12), transparent 50%),
+    linear-gradient(180deg, #0B0E13, #0A0D13);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  background: conic-gradient(from 180deg at 50% 50%, rgba(54, 225, 255, 0.08), rgba(255, 77, 141, 0.08), rgba(124, 92, 255, 0.08), rgba(54, 225, 255, 0.08));
+  filter: blur(120px);
+  opacity: 0.6;
+  z-index: -2;
+  animation: shimmer 18s linear infinite;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.3;
+  z-index: -1;
+  pointer-events: none;
+}
+
+input,
+select,
+textarea {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 0 3px rgba(42, 144, 255, 0.14);
+  background-color: rgba(15, 19, 25, 0.85);
+}
+
+button {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
 main {
@@ -40,13 +84,29 @@ main {
   box-shadow: 0 22px 70px rgba(0, 0, 0, 0.5);
 }
 
+.glass {
+  @apply bg-surface/70 border border-line rounded-2xl shadow-soft;
+  backdrop-filter: blur(12px);
+}
+
+.glow-border {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 0 40px rgba(124, 92, 255, 0.16);
+}
+
+.gradient-text {
+  background: linear-gradient(90deg, #36E1FF, #FF4D8D, #7C5CFF);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 .btn-soft {
   transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 .btn-soft:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(255, 77, 141, 0.25);
+  box-shadow: 0 12px 30px rgba(124, 92, 255, 0.25);
 }
 
 @keyframes fadeIn {
