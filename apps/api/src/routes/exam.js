@@ -1,7 +1,15 @@
 ﻿import express from "express";
 import { query } from "../db.js";
 import { sendWebhook } from "../discord.js";
-import { botEnabled, createTicketChannel, postToChannel, channelJumpLink, addMemberRole } from "../discord_channels.js";
+import {
+  botEnabled,
+  createTicketChannel,
+  postToChannel,
+  channelJumpLink,
+  addMemberRole,
+  removeMemberRole,
+  editMessage
+} from "../discord_channels.js";
 
 const router = express.Router();
 
@@ -64,6 +72,133 @@ function chunkAnswerBlocks(text, maxLen) {
   }
   if (buf) chunks.push(buf);
   return chunks;
+}
+
+async function checkSteamVac(steamLink) {
+  if (!steamLink) return { status: "unknown", reason: "no_steam_link" };
+
+  try {
+    const res = await fetch(steamLink, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (WhitelistBot/1.0)"
+      }
+    });
+    if (!res.ok) return { status: "unknown", reason: `http_${res.status}` };
+
+    const html = await res.text();
+    const text = html.replace(/\s+/g, " ");
+
+    // Common Steam texts (EN/ES)
+    const vacOk = /no\s+vac\s+bans/i.test(text);
+    const gameBanOk = /no\s+game\s+bans/i.test(text);
+
+    // "Last ban X days ago" / "Last ban: X days"
+    let days = null;
+    const m1 = text.match(/last\s+ban[^0-9]{0,20}(\d+)\s+day/i);
+    if (m1) days = Number(m1[1]);
+
+    // "in the last X days"
+    if (days === null) {
+      const m2 = text.match(/last\s+(\d+)\s+days/i);
+      if (m2) days = Number(m2[1]);
+    }
+
+    // Spanish-ish "ultima sancion hace X dias"
+    if (days === null) {
+      const m3 = text.match(/ultima\s+sanci[oó]n[^0-9]{0,20}(\d+)\s+d[ií]a/i);
+      if (m3) days = Number(m3[1]);
+    }
+
+    const vacMention = /vac\s+ban/i.test(text) || /baneo\s+vac/i.test(text);
+
+    if (days !== null) {
+      return { status: "ok", days, flagged: days < 180, vacMention: true };
+    }
+
+    if (vacMention && !(vacOk && gameBanOk)) {
+      // If Steam shows a VAC/Game ban but no days, treat as flagged.
+      return { status: "ok", days: null, flagged: true, vacMention: true };
+    }
+
+    if (vacOk && gameBanOk) {
+      return { status: "ok", days: null, flagged: false, vacMention: false };
+    }
+
+    return { status: "unknown", reason: "no_signal" };
+  } catch (e) {
+    return { status: "unknown", reason: "fetch_error" };
+  }
+}
+
+async function applyAutoDecision({ examId, statusValue, note, userId, mainChannelId, staffChannelId, staffMessageId }) {
+  const resultText = statusValue === "approved" ? "ACEPTADA" : statusValue === "rejected" ? "RECHAZADA" : "PENDIENTE DE CAMBIOS";
+  const color = statusValue === "approved" ? 0x2ecc71 : statusValue === "rejected" ? 0xe74c3c : 0xf1c40f;
+
+  await query(`UPDATE exams SET status = $2, reviewed_at = NOW() WHERE id = $1`, [examId, statusValue]);
+
+  // Disable staff buttons on final decisions
+  if (staffChannelId && staffMessageId && (statusValue === "approved" || statusValue === "rejected")) {
+    try {
+      await editMessage(staffChannelId, staffMessageId, {
+        components: [
+          {
+            type: 1,
+            components: [
+              { type: 2, style: 3, custom_id: "wl_disabled", label: "Aceptada", disabled: true },
+              { type: 2, style: 4, custom_id: "wl_disabled2", label: "Rechazada", disabled: true },
+              { type: 2, style: 2, custom_id: "wl_disabled3", label: "Pendiente de cambios", disabled: true }
+            ]
+          }
+        ]
+      });
+    } catch {}
+  }
+
+  if (mainChannelId) {
+    await postToChannel(mainChannelId, {
+      content: `<@${userId}>`,
+      embeds: [
+        {
+          title: `Whitelist ${resultText}`,
+          color,
+          description:
+            statusValue === "changes_requested"
+              ? "El staff te ha pedido cambios. Responde en este ticket."
+              : "Revision finalizada.",
+          fields: note ? [{ name: "Motivo / nota", value: String(note).slice(0, 1024), inline: false }] : []
+        }
+      ]
+    });
+  }
+
+  if (staffChannelId) {
+    await postToChannel(staffChannelId, {
+      embeds: [
+        {
+          title: `Auto-decision: ${resultText}`,
+          color,
+          description: `Examen #${examId}${note ? `\n\n**Motivo:**\n${String(note).slice(0, 1800)}` : ""}`
+        }
+      ]
+    });
+  }
+
+  const mainGuildId = process.env.DISCORD_MAIN_GUILD_ID || process.env.DISCORD_GUILD_ID || null;
+  const roleApproved = process.env.DISCORD_MAIN_ROLE_APPROVED_ID || null;
+  const roleRejected = process.env.DISCORD_MAIN_ROLE_REJECTED_ID || null;
+
+  if (mainGuildId && userId) {
+    try {
+      if (statusValue === "approved" && roleApproved) {
+        await addMemberRole({ guildId: mainGuildId, userId, roleId: roleApproved });
+        if (roleRejected) await removeMemberRole({ guildId: mainGuildId, userId, roleId: roleRejected });
+      }
+      if (statusValue === "rejected" && roleRejected) {
+        await addMemberRole({ guildId: mainGuildId, userId, roleId: roleRejected });
+        if (roleApproved) await removeMemberRole({ guildId: mainGuildId, userId, roleId: roleApproved });
+      }
+    } catch {}
+  }
 }
 
 async function ensureExamQuestionsTable() {
@@ -332,6 +467,33 @@ router.post("/exam/submit", requireUser, async (req, res) => {
     let mainGuildId = null;
     let staffGuildId = null;
 
+    let staffMessageId = null;
+    let autoDecision = null;
+
+    // Auto checks (minor / VAC)
+    if (profile?.isAdult === false) {
+      autoDecision = {
+        statusValue: "rejected",
+        note: "Solicitud rechazada automaticamente: menor de edad."
+      };
+    }
+
+    let vacCheck = null;
+    if (profile?.steamLink) {
+      vacCheck = await checkSteamVac(profile.steamLink);
+      await query(
+        `INSERT INTO logs (exam_id, type, count, details)
+         VALUES ($1, 'steam_vac', 1, $2)`,
+        [examId, vacCheck]
+      );
+      if (vacCheck?.flagged) {
+        autoDecision = {
+          statusValue: "rejected",
+          note: "Solicitud rechazada automaticamente: VAC inferior a 6 meses."
+        };
+      }
+    }
+
     try {
       if (botEnabled()) {
         const displayName = profile?.discordName || req.session.user.username || req.session.user.discordId;
@@ -528,6 +690,7 @@ router.post("/exam/submit", requireUser, async (req, res) => {
 
         const msg = await postToChannel(staffChannel.id, staffPayload);
         if (msg?.id) {
+          staffMessageId = msg.id;
           await query(`UPDATE exams SET discord_message_id_staff = $2 WHERE id = $1`, [examId, msg.id]);
         }
       }
@@ -537,10 +700,22 @@ router.post("/exam/submit", requireUser, async (req, res) => {
 
     await sendWebhook(webhookPayload);
 
-    await query(
-      `UPDATE exams SET status = 'submitted', submitted_at = NOW() WHERE id = $1 AND status = 'submitting'`,
-      [examId]
-    );
+    if (autoDecision) {
+      await applyAutoDecision({
+        examId,
+        statusValue: autoDecision.statusValue,
+        note: autoDecision.note,
+        userId: req.session.user.discordId,
+        mainChannelId: mainChannel?.id || null,
+        staffChannelId: staffChannel?.id || null,
+        staffMessageId
+      });
+    } else {
+      await query(
+        `UPDATE exams SET status = 'submitted', submitted_at = NOW() WHERE id = $1 AND status = 'submitting'`,
+        [examId]
+      );
+    }
 
     res.json({ ok: true, discordChannelId: mainChannel?.id || staffChannel?.id || null });
   } catch (err) {

@@ -23,6 +23,10 @@ function staffConfig() {
   return { guildId, staffRoleIds };
 }
 
+function mainGuildId() {
+  return process.env.DISCORD_MAIN_GUILD_ID || process.env.DISCORD_GUILD_ID || null;
+}
+
 function decisionButtonsDisabled() {
   return [
     {
@@ -31,6 +35,18 @@ function decisionButtonsDisabled() {
         { type: 2, style: 3, custom_id: "wl_disabled", label: "Aceptada", disabled: true },
         { type: 2, style: 4, custom_id: "wl_disabled2", label: "Rechazada", disabled: true },
         { type: 2, style: 2, custom_id: "wl_disabled3", label: "Pendiente de cambios", disabled: true }
+      ]
+    }
+  ];
+}
+
+function appealButtonsDisabled() {
+  return [
+    {
+      type: 1,
+      components: [
+        { type: 2, style: 1, custom_id: "wl_appeal_disabled", label: "Apelacion", disabled: true },
+        { type: 2, style: 4, custom_id: "wl_close_disabled", label: "Cerrar ticket", disabled: true }
       ]
     }
   ];
@@ -164,19 +180,18 @@ export function startDiscordBot() {
 
   client.on("interactionCreate", async (interaction) => {
     try {
-      const { guildId, staffRoleIds } = staffConfig();
+      const { guildId: staffGuildId, staffRoleIds } = staffConfig();
+      const mainGuild = mainGuildId();
 
       if (interaction.isButton()) {
         const id = interaction.customId || "";
 
-        // Only handle buttons inside the staff server.
-        if (!guildId || interaction.guildId !== guildId) return;
-        if (!hasStaffRole(interaction, staffRoleIds)) {
-          await interaction.reply({ content: "No tienes permisos para revisar whitelists.", ephemeral: true });
-          return;
-        }
-
         if (id.startsWith("wl_decide:")) {
+          if (!staffGuildId || interaction.guildId !== staffGuildId) return;
+          if (!hasStaffRole(interaction, staffRoleIds)) {
+            await interaction.reply({ content: "No tienes permisos para revisar whitelists.", ephemeral: true });
+            return;
+          }
           const parts = id.split(":");
           const examId = Number(parts[1]);
           const status = parts[2];
@@ -189,6 +204,11 @@ export function startDiscordBot() {
         }
 
         if (id.startsWith("wl_reject:")) {
+          if (!staffGuildId || interaction.guildId !== staffGuildId) return;
+          if (!hasStaffRole(interaction, staffRoleIds)) {
+            await interaction.reply({ content: "No tienes permisos para revisar whitelists.", ephemeral: true });
+            return;
+          }
           const examId = Number(id.split(":")[1]);
           if (!Number.isInteger(examId)) return;
 
@@ -206,6 +226,11 @@ export function startDiscordBot() {
         }
 
         if (id.startsWith("wl_changes:")) {
+          if (!staffGuildId || interaction.guildId !== staffGuildId) return;
+          if (!hasStaffRole(interaction, staffRoleIds)) {
+            await interaction.reply({ content: "No tienes permisos para revisar whitelists.", ephemeral: true });
+            return;
+          }
           const examId = Number(id.split(":")[1]);
           if (!Number.isInteger(examId)) return;
 
@@ -222,20 +247,80 @@ export function startDiscordBot() {
           return interaction.showModal(modal);
         }
 
+        if (id.startsWith("wl_appeal:")) {
+          if (mainGuild && interaction.guildId !== mainGuild) return;
+          const discordId = id.split(":")[1];
+          if (!discordId) return;
+
+          // Only the same user or staff can appeal.
+          if (interaction.user.id !== discordId && !hasStaffRole(interaction, staffRoleIds)) {
+            await interaction.reply({ content: "No puedes enviar una apelacion para otro usuario.", ephemeral: true });
+            return;
+          }
+
+          const modal = new ModalBuilder().setCustomId(`wl_appeal_modal:${discordId}`).setTitle("Apelacion");
+          const input = new TextInputBuilder()
+            .setCustomId("proof")
+            .setLabel("Pruebas del robo de cuenta (links o texto)")
+            .setStyle(TextInputStyle.Paragraph)
+            .setMinLength(10)
+            .setMaxLength(900)
+            .setRequired(true);
+
+          modal.addComponents(new ActionRowBuilder().addComponents(input));
+          return interaction.showModal(modal);
+        }
+
+        if (id.startsWith("wl_close:")) {
+          if (mainGuild && interaction.guildId !== mainGuild) return;
+          const discordId = id.split(":")[1];
+          if (!discordId) return;
+
+          // Only the same user or staff can close.
+          if (interaction.user.id !== discordId && !hasStaffRole(interaction, staffRoleIds)) {
+            await interaction.reply({ content: "No puedes cerrar este ticket.", ephemeral: true });
+            return;
+          }
+
+          await interaction.deferReply({ ephemeral: true });
+          // Find appeal ticket by discord_id + channel
+          const appealRes = await query(
+            `SELECT id, main_channel_id, main_message_id
+             FROM appeals
+             WHERE discord_id = $1 AND main_channel_id = $2
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            [discordId, interaction.channelId]
+          );
+
+          if (appealRes.rows.length) {
+            const appeal = appealRes.rows[0];
+            try {
+              if (appeal.main_channel_id && appeal.main_message_id) {
+                await editMessage(appeal.main_channel_id, appeal.main_message_id, { components: appealButtonsDisabled() });
+              }
+            } catch {}
+            await query(`UPDATE appeals SET status = 'closed', updated_at = NOW() WHERE id = $1`, [appeal.id]);
+          }
+
+          await postToChannel(interaction.channelId, {
+            content: "Ticket cerrado por el usuario."
+          });
+          return interaction.editReply({ content: "Ticket cerrado." });
+        }
+
         return;
       }
 
       if (interaction.isModalSubmit()) {
         const id = interaction.customId || "";
 
-        // Only handle modals inside the staff server.
-        if (!guildId || interaction.guildId !== guildId) return;
-        if (!hasStaffRole(interaction, staffRoleIds)) {
-          await interaction.reply({ content: "No tienes permisos para revisar whitelists.", ephemeral: true });
-          return;
-        }
-
         if (id.startsWith("wl_reject_modal:")) {
+          if (!staffGuildId || interaction.guildId !== staffGuildId) return;
+          if (!hasStaffRole(interaction, staffRoleIds)) {
+            await interaction.reply({ content: "No tienes permisos para revisar whitelists.", ephemeral: true });
+            return;
+          }
           const examId = Number(id.split(":")[1]);
           const note = interaction.fields.getTextInputValue("reason");
           await interaction.deferReply({ ephemeral: true });
@@ -245,12 +330,64 @@ export function startDiscordBot() {
         }
 
         if (id.startsWith("wl_changes_modal:")) {
+          if (!staffGuildId || interaction.guildId !== staffGuildId) return;
+          if (!hasStaffRole(interaction, staffRoleIds)) {
+            await interaction.reply({ content: "No tienes permisos para revisar whitelists.", ephemeral: true });
+            return;
+          }
           const examId = Number(id.split(":")[1]);
           const note = interaction.fields.getTextInputValue("note");
           await interaction.deferReply({ ephemeral: true });
           const result = await handleDecision({ examId, statusValue: "changes_requested", note, interaction });
           if (!result.ok) return interaction.editReply({ content: `No se pudo aplicar: ${result.error}` });
           return interaction.editReply({ content: "Mensaje de cambios enviado al usuario." });
+        }
+        if (id.startsWith("wl_appeal_modal:")) {
+          if (mainGuild && interaction.guildId !== mainGuild) return;
+          const discordId = id.split(":")[1];
+          const proof = interaction.fields.getTextInputValue("proof");
+          await interaction.deferReply({ ephemeral: true });
+
+          const appealRes = await query(
+            `SELECT id, main_channel_id, staff_channel_id, main_message_id
+             FROM appeals
+             WHERE discord_id = $1
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            [discordId]
+          );
+          if (!appealRes.rows.length) {
+            return interaction.editReply({ content: "No se encontro un ticket de apelacion." });
+          }
+
+          const appeal = appealRes.rows[0];
+          await query(`UPDATE appeals SET status = 'appeal_submitted', updated_at = NOW() WHERE id = $1`, [appeal.id]);
+
+          if (appeal.main_channel_id && appeal.main_message_id) {
+            try {
+              await editMessage(appeal.main_channel_id, appeal.main_message_id, { components: appealButtonsDisabled() });
+            } catch {}
+          }
+
+          if (appeal.staff_channel_id) {
+            await postToChannel(appeal.staff_channel_id, {
+              embeds: [
+                {
+                  title: "Apelacion recibida",
+                  color: 0xf1c40f,
+                  description: `Usuario: <@${discordId}>\n\n**Pruebas:**\n${String(proof).slice(0, 1800)}`
+                }
+              ]
+            });
+          }
+
+          if (appeal.main_channel_id) {
+            await postToChannel(appeal.main_channel_id, {
+              content: "<@"+discordId+"> Apelacion enviada. El staff revisara tus pruebas."
+            });
+          }
+
+          return interaction.editReply({ content: "Apelacion enviada al staff." });
         }
       }
     } catch (e) {

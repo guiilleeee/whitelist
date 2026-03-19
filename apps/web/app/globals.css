@@ -16,6 +16,10 @@ body {
     linear-gradient(180deg, #0B0E13, #090B10);
 }
 
+main {
+  animation: fadeIn 0.5s ease-out;
+}
+
 ::selection {
   background: rgba(42, 144, 255, 0.25);
 }
@@ -27,6 +31,31 @@ body {
 .panel {
   @apply bg-panel/95 border border-line rounded-2xl shadow-soft;
   backdrop-filter: blur(10px);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.panel:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.5);
+}
+
+.btn-soft {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.btn-soft:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(255, 77, 141, 0.25);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .chip {

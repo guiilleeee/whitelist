@@ -514,7 +514,7 @@ export default function ExamPage() {
           <h1 className="text-2xl font-display mb-4">Debes iniciar sesion</h1>
           <a
             href={`${apiUrl}/auth/discord`}
-            className="inline-flex items-center justify-center rounded-xl bg-accent text-white font-semibold px-4 py-2"
+            className="inline-flex items-center justify-center rounded-xl bg-accent text-white font-semibold px-4 py-2 btn-soft"
           >
             Iniciar con Discord
           </a>
@@ -813,7 +813,7 @@ export default function ExamPage() {
               <button
                 onClick={handleSubmit}
                 disabled={isSubmitting}
-                className="rounded-xl bg-accent text-white font-semibold px-4 py-2 disabled:opacity-60"
+                className="rounded-xl bg-accent text-white font-semibold px-4 py-2 disabled:opacity-60 btn-soft"
               >
                 {isSubmitting ? "Enviando formulario..." : "Enviar formulario"}
               </button>
