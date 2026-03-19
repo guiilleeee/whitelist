@@ -159,7 +159,15 @@ export default function ExamPage() {
   useEffect(() => {
     fetch(`${apiUrl}/me`, { credentials: "include" })
       .then((res) => res.json())
-      .then((data) => setUser(data.user))
+      .then((data) => {
+        setUser(data.user);
+        if (data?.user?.username) {
+          setProfile((prev) => ({
+            ...prev,
+            discordName: data.user.username
+          }));
+        }
+      })
       .catch(() => setUser(null));
   }, []);
 
@@ -575,9 +583,9 @@ export default function ExamPage() {
             <div className="mt-6 grid md:grid-cols-2 gap-4">
               <input
                 className="w-full rounded-lg bg-ink/30 border border-line px-4 py-3 text-sm text-text"
-                placeholder="Nombre de Discord (manual)"
+                placeholder="Nombre de Discord (se rellena automaticamente)"
                 value={profile.discordName}
-                onChange={(e) => setProfile({ ...profile, discordName: e.target.value })}
+                readOnly
               />
               <input
                 className="w-full rounded-lg bg-ink/30 border border-line px-4 py-3 text-sm text-text"

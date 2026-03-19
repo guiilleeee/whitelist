@@ -91,6 +91,7 @@ async function checkSteamVac(steamLink) {
     // Common Steam texts (EN/ES)
     const vacOk = /no\s+vac\s+bans/i.test(text);
     const gameBanOk = /no\s+game\s+bans/i.test(text);
+    const redBanBlock = /profile_ban_status/i.test(text);
 
     // "Last ban X days ago" / "Last ban: X days"
     let days = null;
@@ -109,7 +110,7 @@ async function checkSteamVac(steamLink) {
       if (m3) days = Number(m3[1]);
     }
 
-    const vacMention = /vac\s+ban/i.test(text) || /baneo\s+vac/i.test(text);
+    const vacMention = /vac\s+ban/i.test(text) || /baneo\s+vac/i.test(text) || /sancion\s+vac/i.test(text);
 
     if (days !== null) {
       return { status: "ok", days, flagged: days < 180, vacMention: true };
@@ -117,6 +118,11 @@ async function checkSteamVac(steamLink) {
 
     if (vacMention && !(vacOk && gameBanOk)) {
       // If Steam shows a VAC/Game ban but no days, treat as flagged.
+      return { status: "ok", days: null, flagged: true, vacMention: true };
+    }
+
+    if (redBanBlock && !vacOk) {
+      // Red ban block visible and not explicitly "no bans" -> treat as flagged.
       return { status: "ok", days: null, flagged: true, vacMention: true };
     }
 

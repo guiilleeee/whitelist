@@ -17,7 +17,7 @@ function StatusContent() {
 
   return (
     <main className="min-h-screen flex items-center justify-center px-6">
-      <div className="max-w-md w-full panel p-8 text-center">
+      <div className="max-w-md w-full panel p-8 text-center animate-fadeInUp">
         <div className="flex items-center justify-center mb-4">
           <div className="h-12 w-12 rounded-2xl bg-soft border border-line flex items-center justify-center">
             <img src="/genesis-logo.png" alt="Genesis Community" className="h-9 w-9 object-contain" />

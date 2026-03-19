@@ -149,13 +149,14 @@ router.get("/auth/discord/callback", async (req, res) => {
                 {
                   title: "Cuenta de Discord demasiado nueva",
                   color: 0xe74c3c,
-                  description: "Tu cuenta no cumple la antiguedad minima de 6 meses.",
+                  description:
+                    "Por seguridad, exigimos un minimo de 6 meses de antiguedad en Discord para acceder al servidor.",
                   fields: [
                     { name: "Estado", value: "Suspendido por antiguedad", inline: true },
                     { name: "Ticket staff", value: staffLink || "N/A", inline: true },
                     {
                       name: "Si te han robado la cuenta",
-                      value: "Pulsa **Apelacion** y envia pruebas del robo.",
+                      value: "Pulsa **Apelacion** y envia pruebas (capturas, tickets, etc).",
                       inline: false
                     }
                   ]
