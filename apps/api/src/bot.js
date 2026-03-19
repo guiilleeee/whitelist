@@ -16,6 +16,45 @@ function parseCsv(value) {
     .filter(Boolean);
 }
 
+const STATUS_ROLES = {
+  approved: process.env.DISCORD_MAIN_ROLE_APPROVED_ID,
+  rejected: process.env.DISCORD_MAIN_ROLE_REJECTED_ID,
+  minor: process.env.DISCORD_MAIN_ROLE_MINOR_ID,
+  vac: process.env.DISCORD_MAIN_ROLE_VAC_ID
+};
+
+function formatEmbedDate(date = new Date()) {
+  const day = date.getDate().toString().padStart(2, "0");
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+function decisionButtonsActive(examId) {
+  return [
+    {
+      type: 1,
+      components: [
+        { type: 2, style: 3, custom_id: `wl_decide:${examId}:approved`, label: "Aceptada" },
+        { type: 2, style: 4, custom_id: `wl_reject:${examId}`, label: "Rechazada" },
+        { type: 2, style: 2, custom_id: `wl_changes:${examId}`, label: "Pendiente de cambios" },
+        { type: 2, style: 1, custom_id: `wl_close_ticket:${examId}`, label: "Cerrar ticket" },
+        { type: 2, style: 4, custom_id: `wl_delete_ticket:${examId}`, label: "Eliminar ticket" }
+      ]
+    }
+  ];
+}
+
+async function removeStatusRoles({ guildId, userId }) {
+  const roleIds = Object.values(STATUS_ROLES).filter(Boolean);
+  for (const roleId of roleIds) {
+    try {
+      await removeMemberRole({ guildId, userId, roleId });
+    } catch {
+      // ignore
+    }
+  }
+}
 function staffConfig() {
   // New (preferred)
   const guildId = process.env.DISCORD_STAFF_GUILD_ID || process.env.DISCORD_GUILD_ID || process.env.DISCORD_MAIN_GUILD_ID;
@@ -25,19 +64,6 @@ function staffConfig() {
 
 function mainGuildId() {
   return process.env.DISCORD_MAIN_GUILD_ID || process.env.DISCORD_GUILD_ID || null;
-}
-
-function decisionButtonsDisabled() {
-  return [
-    {
-      type: 1,
-      components: [
-        { type: 2, style: 3, custom_id: "wl_disabled", label: "Aceptada", disabled: true },
-        { type: 2, style: 4, custom_id: "wl_disabled2", label: "Rechazada", disabled: true },
-        { type: 2, style: 2, custom_id: "wl_disabled3", label: "Pendiente de cambios", disabled: true }
-      ]
-    }
-  ];
 }
 
 function appealButtonsDisabled() {
@@ -117,31 +143,48 @@ function hasStaffRole(interaction, staffRoleIds) {
   }
 }
 
+function memberHasStaffRole(member, staffRoleIds) {
+  try {
+    const roles = member?.roles;
+    if (!roles) return false;
+    const roleList = Array.isArray(roles)
+      ? roles
+      : roles?.cache
+        ? Array.from(roles.cache.keys())
+        : [];
+    return staffRoleIds.some((id) => roleList.includes(id));
+  } catch {
+    return false;
+  }
+}
+
 function resultMeta(statusValue) {
   if (statusValue === "approved") return { label: "ACEPTADA", color: 0x2ecc71 };
   if (statusValue === "rejected") return { label: "RECHAZADA", color: 0xe74c3c };
   return { label: "PENDIENTE DE CAMBIOS", color: 0xf1c40f };
 }
 
-async function applyRoles({ statusValue, userId }) {
+async function applyRoles({ statusValue, userId, reasonCode }) {
   const mainGuildId = process.env.DISCORD_MAIN_GUILD_ID || process.env.DISCORD_GUILD_ID || null;
-  if (!mainGuildId) return;
-
-  const roleApproved = process.env.DISCORD_MAIN_ROLE_APPROVED_ID || null;
-  const roleRejected = process.env.DISCORD_MAIN_ROLE_REJECTED_ID || null;
-  const roleVac = process.env.DISCORD_MAIN_ROLE_VAC_ID || null;
+  if (!mainGuildId || !userId) return;
 
   try {
-    if (statusValue === "approved" && roleApproved) {
-      await addMemberRole({ guildId: mainGuildId, userId, roleId: roleApproved });
-      if (roleRejected) await removeMemberRole({ guildId: mainGuildId, userId, roleId: roleRejected });
+    await removeStatusRoles({ guildId: mainGuildId, userId });
+
+    if (statusValue === "approved" && STATUS_ROLES.approved) {
+      await addMemberRole({ guildId: mainGuildId, userId, roleId: STATUS_ROLES.approved });
     }
-    if (statusValue === "rejected" && roleRejected) {
-      await addMemberRole({ guildId: mainGuildId, userId, roleId: roleRejected });
-      if (roleApproved) await removeMemberRole({ guildId: mainGuildId, userId, roleId: roleApproved });
+
+    if (statusValue === "rejected" && STATUS_ROLES.rejected) {
+      await addMemberRole({ guildId: mainGuildId, userId, roleId: STATUS_ROLES.rejected });
     }
-    if (statusValue === "rejected" && roleVac) {
-      // only if caller decides, see handleDecision
+
+    if (reasonCode === "menor" && STATUS_ROLES.minor) {
+      await addMemberRole({ guildId: mainGuildId, userId, roleId: STATUS_ROLES.minor });
+    }
+
+    if (reasonCode === "vac" && STATUS_ROLES.vac) {
+      await addMemberRole({ guildId: mainGuildId, userId, roleId: STATUS_ROLES.vac });
     }
   } catch (e) {
     console.error("role assignment error:", e);
@@ -175,8 +218,8 @@ async function handleDecision({ examId, statusValue, note, interaction, reasonCo
 
   // Update staff message: disable only on final decisions.
   try {
-    if (exam.discord_channel_id_staff && exam.discord_message_id_staff && (statusValue === "approved" || statusValue === "rejected")) {
-      await editMessage(exam.discord_channel_id_staff, exam.discord_message_id_staff, { components: decisionButtonsDisabled() });
+    if (exam.discord_channel_id_staff && exam.discord_message_id_staff) {
+      await editMessage(exam.discord_channel_id_staff, exam.discord_message_id_staff, { components: decisionButtonsActive(examId) });
     }
     if (exam.discord_channel_id_staff) {
       await postToChannel(exam.discord_channel_id_staff, {
@@ -216,7 +259,7 @@ async function handleDecision({ examId, statusValue, note, interaction, reasonCo
   }
 
   // Assign roles in main guild (approved/rejected)
-  await applyRoles({ statusValue, userId: exam.user_discord_id });
+  await applyRoles({ statusValue, userId: exam.user_discord_id, reasonCode });
 
   // Optional VAC role if rejection reason indicates VAC.
   if (statusValue === "rejected" && reasonCode === "vac") {
@@ -289,7 +332,9 @@ async function postTranscriptToLog({ examId }) {
   const profile = profileLog.rows[0]?.details || {};
 
   const history = String(profile?.characterStory || "(sin historia)").slice(0, 1800);
+  const objective = String(profile?.characterGoal || "(sin objetivo)").slice(0, 1800);
   const comment = "Transcript generado por cierre manual";
+  const dateLabel = formatEmbedDate();
 
   await postToChannel(logChannelId, {
     embeds: [
@@ -300,9 +345,10 @@ async function postTranscriptToLog({ examId }) {
           { name: "Discord", value: `<@${exam.user_discord_id}>`, inline: true },
           { name: "Discord ID", value: String(exam.user_discord_id || "N/A"), inline: true },
           { name: "Steam", value: String(exam.steam_link || "N/A").slice(0, 200), inline: false },
+          { name: "Fecha", value: dateLabel, inline: true },
           { name: "Comentario", value: comment, inline: false }
         ],
-        description: `**Historia:**\n${history}`
+        description: `**Historia:**\n${history}\n\n**Objetivo:**\n${objective}`
       }
     ]
   });
@@ -312,11 +358,20 @@ export function startDiscordBot() {
   if (!botEnabled()) return null;
   if (!process.env.DISCORD_BOT_TOKEN) return null;
 
-  const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+  const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+  });
 
   client.once("ready", () => {
     console.log(`Discord bot ready as ${client.user?.tag || client.user?.id}`);
   });
+
+  const COMMAND_ROLE_MAP = {
+    "!whitelist": { roleKey: "approved", label: "whitelist" },
+    "!rechazada": { roleKey: "rejected", label: "rechazada" },
+    "!menor": { roleKey: "minor", label: "menor de edad" },
+    "!vac": { roleKey: "vac", label: "VAC <6 meses" }
+  };
 
   client.on("interactionCreate", async (interaction) => {
     try {
@@ -766,6 +821,49 @@ export function startDiscordBot() {
         }
       } catch {}
     }
+  });
+
+  client.on("messageCreate", async (message) => {
+    if (!botEnabled()) return;
+    if (message.author.bot) return;
+    if (!message.guild) return;
+
+    const cleaned = message.content.trim().toLowerCase();
+    const args = cleaned.split(/\s+/);
+    const command = args[0];
+    const mapping = COMMAND_ROLE_MAP[command];
+    if (!mapping) return;
+
+    const { guildId, staffRoleIds } = staffConfig();
+    const member = message.member;
+    if (!memberHasStaffRole(member, staffRoleIds)) {
+      await message.reply("Necesitas permisos de staff para usar ese comando.");
+      return;
+    }
+
+    const target = message.mentions.members?.first();
+    if (!target) {
+      await message.reply("Menciona a un usuario para aplicar el rol.");
+      return;
+    }
+
+    const guild = message.guild.id;
+    await removeStatusRoles({ guildId: guild, userId: target.id });
+    const roleId = STATUS_ROLES[mapping.roleKey];
+    if (roleId) {
+      try {
+        await addMemberRole({ guildId: guild, userId: target.id, roleId });
+      } catch (err) {
+        console.error("command role error:", err);
+        await message.reply("No se pudo aplicar el rol, revisa logs.");
+        return;
+      }
+    }
+
+    const comment = message.content.replace(command, "").replace(target.toString(), "").trim();
+    await message.reply(
+      `Rol ${mapping.label} aplicado a <@${target.id}>${comment ? ` (${comment})` : ""}.`
+    );
   });
 
   client.login(process.env.DISCORD_BOT_TOKEN).catch((e) => {

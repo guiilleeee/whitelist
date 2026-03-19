@@ -136,7 +136,7 @@ async function checkSteamVac(steamLink) {
   }
 }
 
-async function applyAutoDecision({ examId, statusValue, note, userId, mainChannelId, staffChannelId, staffMessageId }) {
+async function applyAutoDecision({ examId, statusValue, note, userId, mainChannelId, staffChannelId, staffMessageId, reasonCode }) {
   const resultText = statusValue === "approved" ? "ACEPTADA" : statusValue === "rejected" ? "RECHAZADA" : "PENDIENTE DE CAMBIOS";
   const color = statusValue === "approved" ? 0x2ecc71 : statusValue === "rejected" ? 0xe74c3c : 0xf1c40f;
 
@@ -192,16 +192,26 @@ async function applyAutoDecision({ examId, statusValue, note, userId, mainChanne
   const mainGuildId = process.env.DISCORD_MAIN_GUILD_ID || process.env.DISCORD_GUILD_ID || null;
   const roleApproved = process.env.DISCORD_MAIN_ROLE_APPROVED_ID || null;
   const roleRejected = process.env.DISCORD_MAIN_ROLE_REJECTED_ID || null;
+  const roleMinor = process.env.DISCORD_MAIN_ROLE_MINOR_ID || null;
+  const roleVac = process.env.DISCORD_MAIN_ROLE_VAC_ID || null;
 
   if (mainGuildId && userId) {
     try {
+      for (const roleId of [roleApproved, roleRejected, roleMinor, roleVac].filter(Boolean)) {
+        await removeMemberRole({ guildId: mainGuildId, userId, roleId });
+      }
+
       if (statusValue === "approved" && roleApproved) {
         await addMemberRole({ guildId: mainGuildId, userId, roleId: roleApproved });
-        if (roleRejected) await removeMemberRole({ guildId: mainGuildId, userId, roleId: roleRejected });
       }
       if (statusValue === "rejected" && roleRejected) {
         await addMemberRole({ guildId: mainGuildId, userId, roleId: roleRejected });
-        if (roleApproved) await removeMemberRole({ guildId: mainGuildId, userId, roleId: roleApproved });
+      }
+      if (reasonCode === "menor" && roleMinor) {
+        await addMemberRole({ guildId: mainGuildId, userId, roleId: roleMinor });
+      }
+      if (reasonCode === "vac" && roleVac) {
+        await addMemberRole({ guildId: mainGuildId, userId, roleId: roleVac });
       }
     } catch {}
   }
@@ -480,7 +490,8 @@ router.post("/exam/submit", requireUser, async (req, res) => {
     if (profile?.isAdult === false) {
       autoDecision = {
         statusValue: "rejected",
-        note: "Solicitud rechazada automaticamente: menor de edad."
+        note: "Solicitud rechazada automaticamente: menor de edad.",
+        reasonCode: "menor"
       };
     }
 
@@ -495,7 +506,8 @@ router.post("/exam/submit", requireUser, async (req, res) => {
       if (vacCheck?.flagged) {
         autoDecision = {
           statusValue: "rejected",
-          note: "Solicitud rechazada automaticamente: VAC inferior a 6 meses."
+          note: "Solicitud rechazada automaticamente: VAC inferior a 6 meses.",
+          reasonCode: "vac"
         };
       }
     }
@@ -726,6 +738,7 @@ router.post("/exam/submit", requireUser, async (req, res) => {
         examId,
         statusValue: autoDecision.statusValue,
         note: autoDecision.note,
+        reasonCode: autoDecision.reasonCode,
         userId: req.session.user.discordId,
         mainChannelId: mainChannel?.id || null,
         staffChannelId: staffChannel?.id || null,
