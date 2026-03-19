@@ -73,7 +73,8 @@ function decisionButtonsDisabledFull() {
         { type: 2, style: 3, custom_id: "wl_disabled", label: "Aceptada", disabled: true },
         { type: 2, style: 4, custom_id: "wl_disabled2", label: "Rechazada", disabled: true },
         { type: 2, style: 2, custom_id: "wl_disabled3", label: "Pendiente de cambios", disabled: true },
-        { type: 2, style: 1, custom_id: "wl_disabled4", label: "Cerrar ticket", disabled: true }
+        { type: 2, style: 1, custom_id: "wl_disabled4", label: "Cerrar ticket", disabled: true },
+        { type: 2, style: 4, custom_id: "wl_disabled5", label: "Eliminar ticket", disabled: true }
       ]
     }
   ];
@@ -474,10 +475,12 @@ export function startDiscordBot() {
 
           await interaction.deferReply({ ephemeral: true });
           const examRes = await query(
-            `SELECT discord_channel_id_staff, discord_message_id_staff FROM exams WHERE id = $1`,
+            `SELECT discord_channel_id_staff, discord_channel_id_main, discord_message_id_staff, user_discord_id FROM exams WHERE id = $1`,
             [examId]
           );
           const exam = examRes.rows[0];
+          await postTranscriptToLog({ examId });
+
           if (exam?.discord_channel_id_staff && exam?.discord_message_id_staff) {
             try {
               await editMessage(exam.discord_channel_id_staff, exam.discord_message_id_staff, {
@@ -485,8 +488,75 @@ export function startDiscordBot() {
               });
             } catch {}
           }
-          await postToChannel(interaction.channelId, { content: "Ticket cerrado por staff." });
-          return interaction.editReply({ content: "Ticket cerrado." });
+
+          if (exam?.discord_channel_id_main) {
+            await postToChannel(exam.discord_channel_id_main, {
+              content: `<@${exam.user_discord_id}> El ticket ha sido cerrado por el staff. Se generó el transcript y puedes seguir la conversación si necesitas.`,
+              embeds: [
+                {
+                  title: "Ticket cerrado",
+                  color: 0x1f2a44,
+                  description: "Gracias por tu paciencia. Si necesitas volver a abrirlo, contacta con el staff."
+                }
+              ]
+            });
+          }
+
+          await postToChannel(interaction.channelId, {
+            content: "Ticket cerrado por staff. Transcript guardado en el canal de registros."
+          });
+          await query(`UPDATE exams SET status = 'closed', reviewed_at = NOW() WHERE id = $1`, [examId]);
+          return interaction.editReply({ content: "Ticket cerrado y transcript guardado." });
+        }
+
+        if (id.startsWith("wl_delete_main:") || id.startsWith("wl_delete_ticket:")) {
+          const isMainDelete = id.startsWith("wl_delete_main:");
+          const examId = Number(id.split(":")[1]);
+          if (!Number.isInteger(examId)) return;
+          const allowedGuild = isMainDelete ? mainGuild || staffGuildId : staffGuildId;
+          if (allowedGuild && interaction.guildId !== allowedGuild && interaction.guildId !== staffGuildId) return;
+          if (!hasStaffRole(interaction, staffRoleIds)) {
+            await interaction.reply({ content: "No tienes permisos para eliminar tickets.", ephemeral: true });
+            return;
+          }
+
+          await interaction.deferReply({ ephemeral: true });
+          const examRes = await query(
+            `SELECT user_discord_id, discord_channel_id_main, discord_channel_id_staff, discord_message_id_staff
+             FROM exams WHERE id = $1`,
+            [examId]
+          );
+          const exam = examRes.rows[0];
+          if (!exam) return interaction.editReply({ content: "Examen no encontrado." });
+
+          await postTranscriptToLog({ examId });
+
+          if (exam.discord_channel_id_staff && exam.discord_message_id_staff) {
+            try {
+              await editMessage(exam.discord_channel_id_staff, exam.discord_message_id_staff, {
+                components: decisionButtonsDisabledFull()
+              });
+            } catch {}
+          }
+
+          const deleteIds = [
+            exam.discord_channel_id_main,
+            exam.discord_channel_id_staff,
+            interaction.channelId
+          ]
+            .filter(Boolean)
+            .filter((value, index, arr) => arr.indexOf(value) === index);
+
+          for (const channelId of deleteIds) {
+            try {
+              await deleteChannel(channelId);
+            } catch (err) {
+              console.error("delete ticket channel error:", err);
+            }
+          }
+
+          await query(`UPDATE exams SET status = 'deleted', reviewed_at = NOW() WHERE id = $1`, [examId]);
+          return interaction.editReply({ content: "Ticket eliminado y transcript guardado." });
         }
 
         if (id.startsWith("bl_left:") || id.startsWith("bl_refuse:") || id.startsWith("bl_exception:")) {
@@ -561,7 +631,8 @@ export function startDiscordBot() {
           if (mainGuild && interaction.guildId !== mainGuild) return;
 
           const examRes = await query(
-            `SELECT user_discord_id FROM exams WHERE id = $1`,
+            `SELECT user_discord_id, discord_channel_id_staff
+             FROM exams WHERE id = $1`,
             [examId]
           );
           const exam = examRes.rows[0];
@@ -574,37 +645,27 @@ export function startDiscordBot() {
             return;
           }
 
-          await interaction.reply({
-            content: "Se ha generado el transcript. Quieres cerrar definitivamente el ticket?",
-            ephemeral: true,
-            components: [
-              {
-                type: 1,
-                components: [
-                  { type: 2, style: 3, custom_id: `wl_close_confirm:${examId}`, label: "Si, cerrar" },
-                  { type: 2, style: 2, custom_id: `wl_close_cancel:${examId}`, label: "No, mantener" }
-                ]
-              }
-            ]
-          });
-          return;
-        }
-        if (id.startsWith("wl_close_confirm:")) {
-          const examId = Number(id.split(":")[1]);
-          if (!Number.isInteger(examId)) return;
-          if (mainGuild && interaction.guildId !== mainGuild) return;
-
           await interaction.deferReply({ ephemeral: true });
-          await postTranscriptToLog({ examId });
-          try {
-            await deleteChannel(interaction.channelId);
-          } catch {}
-          return interaction.editReply({ content: "Ticket cerrado definitivamente." });
-        }
-        if (id.startsWith("wl_close_cancel:")) {
-          if (mainGuild && interaction.guildId !== mainGuild) return;
-          await interaction.reply({ content: "Ticket se mantiene abierto.", ephemeral: true });
-          return;
+
+          const staffChannelId = exam.discord_channel_id_staff;
+          if (staffChannelId) {
+            const staffRoleId = staffRoleIds[0] || null;
+            const staffMention = staffRoleId ? `<@&${staffRoleId}>` : "@staff";
+            await postToChannel(staffChannelId, {
+              content: `${staffMention} El usuario <@${exam.user_discord_id}> solicita cerrar el ticket. Usa el boton "Cerrar ticket" para generar el transcript o "Eliminar ticket" para borrarlo.`,
+              components: [
+                {
+                  type: 1,
+                  components: [
+                    { type: 2, style: 3, custom_id: `wl_close_ticket:${examId}`, label: "Cerrar ticket" },
+                    { type: 2, style: 4, custom_id: `wl_delete_ticket:${examId}`, label: "Eliminar ticket" }
+                  ]
+                }
+              ]
+            });
+          }
+
+          return interaction.editReply({ content: "Solicitud enviada. El staff cerrará el ticket y guardará el transcript." });
         }
 
         return;

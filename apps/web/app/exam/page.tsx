@@ -108,6 +108,14 @@ function goalLooksInvalid(goal: string) {
   return banned.some((b) => g.includes(b));
 }
 
+function formatDateValue(date: Date | null) {
+  if (!date) return "--/--/----";
+  const day = date.getDate().toString().padStart(2, "0");
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
 export default function ExamPage() {
   const [user, setUser] = useState<any>(null);
   const [phase, setPhase] = useState<"step1" | "step2" | "exam" | "done">("step1");
@@ -149,6 +157,8 @@ export default function ExamPage() {
   const [copyPasteDetails, setCopyPasteDetails] = useState<{ at: number; type: string }[]>([]);
   const [rightClickDetails, setRightClickDetails] = useState<{ at: number }[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [ticketLink, setTicketLink] = useState<string | null>(null);
+  const [submittedAt, setSubmittedAt] = useState<Date | null>(null);
 
   const currentQuestion = questions[currentIndex];
 
@@ -158,6 +168,8 @@ export default function ExamPage() {
     if (!questions.length) return 0;
     return Math.round(((currentIndex + 1) / questions.length) * 100);
   }, [currentIndex, questions.length]);
+  const todayLabel = useMemo(() => formatDateValue(new Date()), []);
+  const submittedLabel = useMemo(() => formatDateValue(submittedAt), [submittedAt]);
 
   useEffect(() => {
     fetch(`${apiUrl}/me`, { credentials: "include" })
@@ -285,6 +297,8 @@ export default function ExamPage() {
     setTabSwitchDetails([]);
     setCopyPasteDetails([]);
     setRightClickDetails([]);
+    setTicketLink(null);
+    setSubmittedAt(null);
   }
 
   function abandon() {
@@ -522,6 +536,8 @@ export default function ExamPage() {
       }
 
       setPhase("done");
+      setTicketLink(data?.ticketLink || null);
+      setSubmittedAt(new Date());
       setExamId(null);
       setQuestions([]);
       setStatus(null);
@@ -551,13 +567,30 @@ export default function ExamPage() {
   if (phase === "done") {
     return (
       <main className="min-h-screen flex items-center justify-center px-6">
-        <div className="max-w-md w-full glass glow-border p-8 text-center">
-          <h1 className="text-2xl font-display mb-3 gradient-text">Whitelist enviada</h1>
-          <p className="text-muted">Tu whitelist esta siendo revisada por el staff.</p>
+      <div className="max-w-md w-full glass glow-border p-8 text-center">
+        <h1 className="text-2xl font-display mb-3 gradient-text">Whitelist enviada</h1>
+        <p className="text-xs text-muted">Fecha de solicitud: {submittedLabel}</p>
+        <p className="text-sm text-muted mt-2">El staff te responderá por el ticket de Discord que hemos generado para ti.</p>
+        {ticketLink ? (
+          <a
+            href={ticketLink}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-4 inline-flex items-center justify-center rounded-xl bg-accent text-white px-4 py-2 font-semibold transition btn-soft"
+          >
+            Ir al ticket de Discord
+          </a>
+        ) : (
           <a href="/" className="text-xs text-muted mt-4 inline-flex">
             Volver al inicio
           </a>
+        )}
+        <div className="mt-3">
+          <a href="/" className="text-xs text-muted inline-flex">
+            Volver al inicio
+          </a>
         </div>
+      </div>
       </main>
     );
   }
@@ -591,6 +624,7 @@ export default function ExamPage() {
             </span>
             <span className="px-3 py-1 rounded-full border border-line text-muted">Test</span>
           </div>
+          <div className="text-xs text-muted mb-4">Fecha actual: {todayLabel}</div>
 
           <h2 className="text-lg font-display">{stepTitle}</h2>
           <p className="text-sm text-muted mt-2">{stepHint}</p>

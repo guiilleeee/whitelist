@@ -571,7 +571,8 @@ router.post("/exam/submit", requireUser, async (req, res) => {
               {
                 type: 1,
                 components: [
-                  { type: 2, style: 2, custom_id: `wl_close_main:${examId}`, label: "Cerrar ticket" }
+                  { type: 2, style: 2, custom_id: `wl_close_main:${examId}`, label: "Cerrar ticket" },
+                  { type: 2, style: 4, custom_id: `wl_delete_main:${examId}`, label: "Eliminar ticket (staff)" }
                 ]
               }
             ]
@@ -695,17 +696,18 @@ router.post("/exam/submit", requireUser, async (req, res) => {
             ...answerEmbeds
           ].slice(0, 10), // Discord hard limit safety
           components: [
-            {
-              type: 1,
-              components: [
-                { type: 2, style: 3, custom_id: `wl_decide:${examId}:approved`, label: "Aceptada" },
-                { type: 2, style: 4, custom_id: `wl_reject:${examId}`, label: "Rechazada" },
-                { type: 2, style: 2, custom_id: `wl_changes:${examId}`, label: "Pendiente de cambios" },
-                { type: 2, style: 1, custom_id: `wl_close_ticket:${examId}`, label: "Cerrar ticket" }
+                {
+                  type: 1,
+                  components: [
+                    { type: 2, style: 3, custom_id: `wl_decide:${examId}:approved`, label: "Aceptada" },
+                    { type: 2, style: 4, custom_id: `wl_reject:${examId}`, label: "Rechazada" },
+                    { type: 2, style: 2, custom_id: `wl_changes:${examId}`, label: "Pendiente de cambios" },
+                    { type: 2, style: 1, custom_id: `wl_close_ticket:${examId}`, label: "Cerrar ticket" },
+                    { type: 2, style: 4, custom_id: `wl_delete_ticket:${examId}`, label: "Eliminar ticket" }
+                  ]
+                }
               ]
-            }
-          ]
-        };
+            };
 
         const msg = await postToChannel(staffChannel.id, staffPayload);
         if (msg?.id) {
@@ -736,7 +738,8 @@ router.post("/exam/submit", requireUser, async (req, res) => {
       );
     }
 
-    res.json({ ok: true, discordChannelId: mainChannel?.id || staffChannel?.id || null });
+    const ticketLink = mainLink || staffLink || null;
+    res.json({ ok: true, ticketLink });
   } catch (err) {
     console.error("exam/submit error:", err);
     try {
